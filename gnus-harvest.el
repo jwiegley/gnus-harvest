@@ -64,6 +64,11 @@
   :type 'integer
   :group 'gnus-harvest)
 
+(defcustom gnus-harvest-ignore-email-regexp "@public.gmane.org"
+  "A regexps which, if an email matches, that email is ignored."
+  :type 'string
+  :group 'gnus-harvest)
+
 (defun gnus-harvest-sqlite-invoke (sql &optional ignore-output-p)
   (let ((tmp-buf (and (not ignore-output-p)
                       (generate-new-buffer "*sqlite*"))))
@@ -142,12 +147,16 @@ FROM
               (gnus-harvest-insert-address (cadr info) (car info) moment)))
           (delete
            nil
-           (append
-            (mapcar (lambda (field)
-                      (let ((value (message-field-value field t)))
-                        (and value
-                             (mail-extract-address-components value))))
-                    '("to" "reply-to" "from" "resent-from" "cc" "bcc")))))
+           (mapcar (lambda (info)
+                     (and (not (string-match gnus-harvest-ignore-email-regexp
+                                             (cadr info)))
+                          info))
+                   (append
+                    (mapcar (lambda (field)
+                              (let ((value (message-field-value field t)))
+                                (and value
+                                     (mail-extract-address-components value))))
+                            '("to" "reply-to" "from" "resent-from" "cc" "bcc"))))))
     (with-current-buffer tmp-buf
       (gnus-harvest-sqlite-invoke nil t)
       (kill-buffer (current-buffer)))))
