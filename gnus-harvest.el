@@ -27,6 +27,21 @@
 
 ;; This code requires that SQLite3 be installed.  Check to see if the command
 ;; "sqlite3" is already available on your system.
+;;
+;; Once you have that, add this to your .emacs:
+;;
+;;   (eval-after-load "gnus"
+;;     '(progn (require 'gnus-harvest)
+;;             (gnus-harvest-install)))
+;;
+;; If you use message-x and ido, you can get TAB completion of harvested
+;; address in your To:, Cc: and From: fields by using this instead of the
+;; above:
+;;
+;;   (eval-after-load "gnus"
+;;     '(progn (require 'gnus-harvest)
+;;             (gnus-harvest-install 'message-x)))
+;;
 
 (require 'gnus)
 
