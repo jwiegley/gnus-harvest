@@ -94,6 +94,7 @@ CREATE TABLE
         email TEXT(255) NOT NULL,
         fullname TEXT(255),
         last_seen INTEGER NOT NULL,
+        weight INTEGER NOT NULL,
         PRIMARY KEY (email),
         UNIQUE (email)
     )
@@ -114,12 +115,13 @@ SELECT
 FROM
     (
         SELECT
-            email, fullname, last_seen
+            email, fullname, last_seen, weight
         FROM
             addrs
         WHERE
             (email LIKE '%s%s%%' OR fullname LIKE '%s%s%%')
         ORDER BY
+            weight DESC,
             last_seen DESC
         LIMIT
             %d
@@ -129,47 +131,74 @@ FROM
                          gnus-harvest-query-limit))
                 ")")))
 
-(defun gnus-harvest-insert-address (email fullname moment)
+(defun gnus-harvest-mailalias-complete-stub (stub)
+  (require 'mailalias)
+  (sendmail-sync-aliases)
+  (if (eq mail-aliases t)
+      (progn
+	(setq mail-aliases nil)
+	(if (file-exists-p mail-personal-alias-file)
+	    (build-mail-aliases))))
+  (let ((entry (assoc stub mail-aliases)))
+    (if entry
+        (cdr entry)
+      (delete nil
+              (mapcar (lambda (entry)
+                        (if (string-prefix-p stub (car entry))
+                            (cdr entry)))
+                      mail-aliases)))))
+
+(defun gnus-harvest-insert-address (email fullname moment weight)
   (insert "INSERT OR REPLACE INTO addrs (email, ")
   (if fullname
       (insert "fullname, "))
-  (insert "last_seen) VALUES (lower('" email "'), '")
+  (insert "last_seen, weight) VALUES (lower('" email "'), '")
   (if fullname
       (insert fullname "', '"))
-  (insert moment "');\n"))
+  (insert moment "', '")
+  (insert (number-to-string weight) "');\n"))
 
 (defun gnus-harvest-addresses ()
   "Harvest and remember the addresses in the current article buffer."
   (let ((tmp-buf (generate-new-buffer "*gnus harvest*"))
         (moment (number-to-string (floor (float-time)))))
-    (mapc (lambda (info)
-            (with-current-buffer tmp-buf
-              (gnus-harvest-insert-address (cadr info) (car info) moment)))
-          (delete
-           nil
-           (mapcar (lambda (info)
-                     (and info
-                          (not (string-match gnus-harvest-ignore-email-regexp
-                                             (cadr info)))
-                          info))
-                   (append
-                    (mapcar (lambda (field)
-                              (let ((value (message-field-value field t)))
-                                (and value
-                                     (mail-extract-address-components value))))
-                            '("to" "reply-to" "from" "resent-from" "cc" "bcc"))))))
+    (mapc
+     (lambda (info)
+       (if info
+           (let ((field (car info)))
+             (mapc (lambda (addr)
+                     (unless (string-match gnus-harvest-ignore-email-regexp
+                                           (cadr addr))
+                       (with-current-buffer tmp-buf
+                         (gnus-harvest-insert-address
+                          (cadr addr) (car addr) moment
+                          (if (string= "to" field)
+                              10
+                            1)))))
+                   (cdr info)))))
+     (mapcar (lambda (field)
+               (let ((value (message-field-value field)))
+                 (and value
+                      (cons field
+                            (mail-extract-address-components value t)))))
+             '("to" "reply-to" "from" "resent-from" "cc" "bcc")))
     (with-current-buffer tmp-buf
       (gnus-harvest-sqlite-invoke nil t)
       (kill-buffer (current-buffer)))))
 
 (defun gnus-harvest-find-address ()
   (interactive)
-  (backward-kill-word 1)
-  (insert
-   (let ((stub (word-at-point)))
-     (ido-completing-read "Use address: "
-                          (gnus-harvest-complete-stub stub)
-                          nil t stub))))
+  (let* ((stub (word-at-point))
+         (aliases (gnus-harvest-mailalias-complete-stub stub)))
+    (backward-kill-word 1)
+    (insert
+     (if (stringp aliases)
+         aliases
+       (ido-completing-read "Use address: "
+                            (delete-dups
+                             (append aliases
+                                     (gnus-harvest-complete-stub stub)))
+                            nil t stub)))))
 
 (defun gnus-harvest-install (&rest features)
   (unless (file-readable-p gnus-harvest-db-path)
