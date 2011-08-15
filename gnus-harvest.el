@@ -148,7 +148,8 @@ FROM
           (delete
            nil
            (mapcar (lambda (info)
-                     (and (not (string-match gnus-harvest-ignore-email-regexp
+                     (and info
+                          (not (string-match gnus-harvest-ignore-email-regexp
                                              (cadr info)))
                           info))
                    (append
