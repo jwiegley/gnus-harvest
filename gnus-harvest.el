@@ -148,6 +148,37 @@ FROM
                             (cdr entry)))
                       mail-aliases)))))
 
+(defun gnus-harvest-bbdb-complete-stub (stub)
+  (require 'bbdb)
+  (catch 'found
+    (delete
+     nil
+     (apply
+      'append
+      (mapcar
+       (lambda (record)
+         (let* ((nets (bbdb-record-net record))
+                (name (bbdb-record-name record))
+                (aliases
+                 (bbdb-split (bbdb-record-getprop
+                              record bbdb-define-all-aliases-field) ","))
+                (match (catch 'matches
+                         (ignore
+                          (mapc (lambda (alias)
+                                  (if (string-match stub alias)
+                                      (throw 'matches t)))
+                                aliases)))))
+           (when match
+             (mapc
+              (lambda (alias)
+                (if (and (string= alias stub)
+                         (= 1 (length nets)))
+                    (throw 'found (format "%s <%s>" name (car nets)))))
+              aliases)
+             (mapcar (lambda (addr) (format "%s <%s>" name addr)) nets))))
+       (let ((target (cons bbdb-define-all-aliases-field ".")))
+         (bbdb-search (bbdb-records) nil nil nil target)))))))
+
 (defun gnus-harvest-insert-address (email fullname moment weight)
   (insert "INSERT OR REPLACE INTO addrs (email, ")
   (if fullname
@@ -189,7 +220,9 @@ FROM
 (defun gnus-harvest-find-address ()
   (interactive)
   (let* ((stub (word-at-point))
-         (aliases (gnus-harvest-mailalias-complete-stub stub)))
+         (aliases (if (featurep 'bbdb)
+                      (gnus-harvest-bbdb-complete-stub stub)
+                    (gnus-harvest-mailalias-complete-stub stub))))
     (backward-kill-word 1)
     (insert
      (if (stringp aliases)
