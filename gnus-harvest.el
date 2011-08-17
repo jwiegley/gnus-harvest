@@ -245,7 +245,7 @@ FROM
 
   (dolist (feature features)
     (cond ((eq 'message-x feature)
-           (require 'message-x)
+           (load "message-x")
            (add-to-list 'message-x-completion-alist
                         '("\\([rR]esent-\\|[rR]eply-\\)?[tT]o:\\|[bB]?[cC][cC]:" .
                           gnus-harvest-find-address))))))
