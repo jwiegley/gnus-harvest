@@ -189,6 +189,7 @@ FROM
   (insert moment "', '")
   (insert (number-to-string weight) "');\n"))
 
+;;;###autoload
 (defun gnus-harvest-addresses ()
   "Harvest and remember the addresses in the current article buffer."
   (let ((tmp-buf (generate-new-buffer "*gnus harvest*"))
@@ -217,6 +218,7 @@ FROM
       (gnus-harvest-sqlite-invoke nil t)
       (kill-buffer (current-buffer)))))
 
+;;;###autoload
 (defun gnus-harvest-find-address ()
   (interactive)
   (let* ((stub (word-at-point))
@@ -233,6 +235,7 @@ FROM
                                      (gnus-harvest-complete-stub stub)))
                             nil t stub)))))
 
+;;;###autoload
 (defun gnus-harvest-install (&rest features)
   (unless (file-readable-p gnus-harvest-db-path)
     (gnus-harvest-create-db))
@@ -242,12 +245,10 @@ FROM
 
   (dolist (feature features)
     (cond ((eq 'message-x feature)
-           (eval-after-load "message"
-             '(require 'message-x))
-           (eval-after-load "message-x"
-             '(add-to-list 'message-x-completion-alist
-                           '("\\([rR]esent-\\|[rR]eply-\\)?[tT]o:\\|[bB]?[cC][cC]:" .
-                             gnus-harvest-find-address)))))))
+           (require 'message-x)
+           (add-to-list 'message-x-completion-alist
+                        '("\\([rR]esent-\\|[rR]eply-\\)?[tT]o:\\|[bB]?[cC][cC]:" .
+                          gnus-harvest-find-address))))))
 
 (provide 'gnus-harvest)
 
