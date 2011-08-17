@@ -44,7 +44,6 @@
 ;;
 
 (require 'gnus)
-(require 'thingatpt)
 
 (defgroup gnus-harvest nil
   ""
@@ -229,11 +228,16 @@ FROM
 ;;;###autoload
 (defun gnus-harvest-find-address ()
   (interactive)
-  (let* ((stub (word-at-point))
+  (let* ((text-follows (not (looking-at "\\s-*$")))
+         (stub
+          (let ((here (point)))
+            (backward-word 1)
+            (prog1
+                (buffer-substring-no-properties (point) here)
+              (delete-region (point) here))))
          (aliases (if (featurep 'bbdb)
                       (gnus-harvest-bbdb-complete-stub stub)
                     (gnus-harvest-mailalias-complete-stub stub))))
-    (backward-kill-word 1)
     (insert
      (if (stringp aliases)
          aliases
@@ -247,6 +251,8 @@ FROM
          (car aliases))
         (t
          (error "Could not find any matches for '%s'" stub)))))
+    (if text-follows
+        (insert ", "))
     (if (and gnus-harvest-move-to-subject-after-match
              (null (message-field-value "subject")))
         (message-goto-subject))))
