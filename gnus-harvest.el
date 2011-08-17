@@ -44,6 +44,7 @@
 ;;
 
 (require 'gnus)
+(require 'thingatpt)
 
 (defgroup gnus-harvest nil
   ""
@@ -138,6 +139,7 @@ FROM
 
 (defun gnus-harvest-mailalias-complete-stub (stub)
   (require 'mailalias)
+  (require 'sendmail)
   (sendmail-sync-aliases)
   (if (eq mail-aliases t)
       (progn
@@ -154,6 +156,7 @@ FROM
                       mail-aliases)))))
 
 (defun gnus-harvest-bbdb-complete-stub (stub)
+  (require 'bbdb)
   (require 'bbdb-com)
   (catch 'found
     (delete
