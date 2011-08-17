@@ -64,6 +64,11 @@
   :type 'integer
   :group 'gnus-harvest)
 
+(defcustom gnus-harvest-move-to-subject-after-match t
+  ""
+  :type 'boolean
+  :group 'gnus-harvest)
+
 (defcustom gnus-harvest-ignore-email-regexp "@public.gmane.org"
   "A regexps which, if an email matches, that email is ignored."
   :type 'string
@@ -149,7 +154,7 @@ FROM
                       mail-aliases)))))
 
 (defun gnus-harvest-bbdb-complete-stub (stub)
-  (require 'bbdb)
+  (require 'bbdb-com)
   (catch 'found
     (delete
      nil
@@ -229,11 +234,19 @@ FROM
     (insert
      (if (stringp aliases)
          aliases
-       (ido-completing-read "Use address: "
-                            (delete-dups
-                             (append aliases
-                                     (gnus-harvest-complete-stub stub)))
-                            nil t stub)))))
+       (setq aliases
+             (delete-dups (append aliases
+                                  (gnus-harvest-complete-stub stub))))
+       (cond
+        ((> 1 (length aliases))
+         (ido-completing-read "Use address: " aliases nil t stub))
+        ((= 1 (length aliases))
+         (car aliases))
+        (t
+         (error "Could not find any matches for '%s'" stub)))))
+    (if (and gnus-harvest-move-to-subject-after-match
+             (null (message-field-value "subject")))
+        (message-goto-subject))))
 
 ;;;###autoload
 (defun gnus-harvest-install (&rest features)
