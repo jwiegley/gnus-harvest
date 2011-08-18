@@ -50,26 +50,26 @@
 (require 'bbdb-com nil t)
 
 (defgroup gnus-harvest nil
-  ""
+  "Harvest addresses from Gnus articles and messages"
   :group 'gnus)
 
 (defcustom gnus-harvest-sqlite-program (executable-find "sqlite3")
-  ""
+  "Full path to the sqlite3 program"
   :type 'file
   :group 'gnus-harvest)
 
 (defcustom gnus-harvest-db-path (expand-file-name ".addrs" gnus-home-directory)
-  ""
+  "Path to the addresses database used by Gnus harvest"
   :type 'file
   :group 'gnus-harvest)
 
 (defcustom gnus-harvest-query-limit 50
-  ""
+  "The maximum number of addresses gnus-harvest will query for"
   :type 'integer
   :group 'gnus-harvest)
 
 (defcustom gnus-harvest-move-to-subject-after-match t
-  ""
+  "After completing a single address, move to the subject field if empty"
   :type 'boolean
   :group 'gnus-harvest)
 
