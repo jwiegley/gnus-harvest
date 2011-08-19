@@ -245,9 +245,9 @@ FROM
              (delete-dups (append aliases
                                   (gnus-harvest-complete-stub stub))))
        (cond
-        ((> 1 (length aliases))
+        ((> (length aliases) 1)
          (ido-completing-read "Use address: " aliases nil t stub))
-        ((= 1 (length aliases))
+        ((= (length aliases) 1)
          (car aliases))
         (t
          (error "Could not find any matches for '%s'" stub)))))
