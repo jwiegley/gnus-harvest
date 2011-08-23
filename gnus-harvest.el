@@ -250,6 +250,7 @@ FROM
         ((= (length aliases) 1)
          (car aliases))
         (t
+         (insert stub)
          (error "Could not find any matches for '%s'" stub)))))
     (if text-follows
         (insert ", "))
