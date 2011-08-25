@@ -205,16 +205,18 @@ FROM
      (lambda (info)
        (if info
            (let ((field (car info)))
-             (mapc (lambda (addr)
-                     (unless (string-match gnus-harvest-ignore-email-regexp
-                                           (cadr addr))
-                       (with-current-buffer tmp-buf
-                         (gnus-harvest-insert-address
-                          (cadr addr) (car addr) moment
-                          (if (string= "to" field)
-                              10
-                            1)))))
-                   (cdr info)))))
+             (mapc
+              (lambda (addr)
+                (if (and (cadr addr)
+                         (not (string-match gnus-harvest-ignore-email-regexp
+                                            (cadr addr))))
+                    (with-current-buffer tmp-buf
+                      (gnus-harvest-insert-address
+                       (cadr addr) (car addr) moment
+                       (if (string= "to" field)
+                           10
+                         1)))))
+              (cdr info)))))
      (mapcar (lambda (field)
                (let ((value (message-field-value field)))
                  (and value
