@@ -244,8 +244,10 @@ FROM
      (if (stringp aliases)
          aliases
        (setq aliases
-             (delete-dups (append aliases
-                                  (gnus-harvest-complete-stub stub))))
+             (delete-dups
+              (append aliases
+                      (delete stub
+                              (gnus-harvest-complete-stub stub)))))
        (cond
         ((> (length aliases) 1)
          (ido-completing-read "Use address: " aliases nil t stub))
