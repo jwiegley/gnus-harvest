@@ -73,7 +73,7 @@
   :type 'boolean
   :group 'gnus-harvest)
 
-(defcustom gnus-harvest-ignore-email-regexp "@public.gmane.org"
+(defcustom gnus-harvest-ignore-email-regexp "\\([+\"]\\|@public.gmane.org\\)"
   "A regexps which, if an email matches, that email is ignored."
   :type 'string
   :group 'gnus-harvest)
