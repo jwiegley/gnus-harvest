@@ -162,16 +162,22 @@ FROM
      nil
      (mapcar
       (lambda (record)
-        (let* ((nets (bbdb-record-net record))
-               (props (bbdb-record-raw-notes record))
-               (alias (cdr (assq 'mail-alias props)))
+        (let* ((nets (funcall (if (functionp 'bbdb-record-net)
+                                  'bbdb-record-net
+                                'bbdb-record-mail) record))
+               (alias (if (functionp 'bbdb-record-raw-notes)
+                          (cdr (assq 'mail-alias
+                                     (bbdb-record-raw-notes record) record))
+                        (bbdb-record-note record 'mail-alias)))
                (addr (and nets
                           (format "%s <%s>" (bbdb-record-name record)
                                   (car nets)))))
           (if (and addr alias (string= stub alias))
               (throw 'found addr)
             addr)))
-      (let ((target (cons bbdb-define-all-aliases-field stub)))
+      (let ((target (cons (if (boundp 'bbdb-define-all-aliases-field)
+                              bbdb-define-all-aliases-field
+                            bbdb-mail-alias-field) stub)))
         (bbdb-search (bbdb-records) stub nil stub target))))))
 
 (defun gnus-harvest-insert-address (email fullname moment weight)
