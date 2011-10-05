@@ -46,6 +46,7 @@
 (require 'gnus)
 (require 'mailalias)
 (require 'sendmail)
+(require 'message)
 (require 'bbdb nil t)
 (require 'bbdb-com nil t)
 
@@ -54,29 +55,66 @@
   :group 'gnus)
 
 (defcustom gnus-harvest-sqlite-program (executable-find "sqlite3")
-  "Full path to the sqlite3 program"
+  "Full path to the sqlite3 program."
   :type 'file
   :group 'gnus-harvest)
 
 (defcustom gnus-harvest-db-path (expand-file-name ".addrs" gnus-home-directory)
-  "Path to the addresses database used by Gnus harvest"
+  "Path to the addresses database used by Gnus harvest."
   :type 'file
   :group 'gnus-harvest)
 
 (defcustom gnus-harvest-query-limit 50
-  "The maximum number of addresses gnus-harvest will query for"
+  "The maximum number of addresses gnus-harvest will query for."
   :type 'integer
   :group 'gnus-harvest)
 
 (defcustom gnus-harvest-move-to-subject-after-match t
-  "After completing a single address, move to the subject field if empty"
+  "After completing a single address, move to the subject field if empty."
   :type 'boolean
   :group 'gnus-harvest)
 
-(defcustom gnus-harvest-ignore-email-regexp "\\([+\"]\\|@public.gmane.org\\)"
-  "A regexps which, if an email matches, that email is ignored."
-  :type 'string
+(defcustom gnus-harvest-match-by-prefix nil
+  "If non-nil, only match from the database by prefix."
+  :type 'boolean
   :group 'gnus-harvest)
+
+(defcustom gnus-harvest-search-in-bbdb (featurep 'bbdb)
+  "If non-nil, look for mail-alias notes in the user's BBDB records."
+  :type 'boolean
+  :group 'gnus-harvest)
+
+(defcustom gnus-harvest-ignore-email-regexp
+  "\\([+\"]\\|no-reply\\|@public.gmane.org\\|localhost\\)"
+  "A regexps which, if an email matches, that email is ignored."
+  :type 'regexp
+  :group 'gnus-harvest)
+
+(defcustom gnus-harvest-sender-alist nil
+  "An alist of To addresses -> From (if not already set).
+    For example, if you associate johnw@foo.bar with the From
+address doug@foo.bar, then anytime you write a letter to
+doug@foo.bar, or you reply to a message from him, your From
+header will get set to johnw@foo.bar -- if it is not already set
+to something else.
+    If no entry matches, `user-mail-address' is used.
+    If this variable is not, this feature is not used."
+  :type '(alist :key-type regexp :value_type string)
+  :group 'gnus-harvest)
+
+(defun gnus-harvest-set-from (&optional address)
+  (when (or address gnus-harvest-sender-alist)
+    (let ((to (message-field-value "to")))
+      (when to
+        (unless (message-field-value "from")
+          (message-add-header
+           (format "From: %s <%s>"
+                   user-full-name
+                   (or address
+                       (assoc-default
+                        (cadr (mail-extract-address-components to))
+                        gnus-harvest-sender-alist 'string-match
+                        user-mail-address)))))))))
 
 (defun gnus-harvest-sqlite-invoke (sql &optional ignore-output-p)
   (let ((tmp-buf (and (not ignore-output-p)
@@ -100,31 +138,45 @@
 CREATE TABLE
     addrs
     (
-        email TEXT(255) NOT NULL,
-        fullname TEXT(255),
-        last_seen INTEGER NOT NULL,
-        weight INTEGER NOT NULL,
-        PRIMARY KEY (email),
-        UNIQUE (email)
+        email         TEXT(255)  NOT NULL,
+        respond_email TEXT(255),
+        fullname      TEXT(255),
+        last_seen     INTEGER    NOT NULL,
+        weight        INTEGER    NOT NULL,
+
+        PRIMARY KEY (email), UNIQUE (email)
     )
-" t))
+" t)
+  (gnus-harvest-sqlite-invoke "
+CREATE UNIQUE INDEX IF NOT EXISTS email_idx on addrs (email)" t)
+  (gnus-harvest-sqlite-invoke "
+CREATE INDEX IF NOT EXISTS fullname_idx on addrs (fullname)" t)
+  (gnus-harvest-sqlite-invoke "
+CREATE INDEX IF NOT EXISTS last_seen_idx on addrs (last_seen)" t))
 
 (defun gnus-harvest-complete-stub (stub &optional prefix-only-p)
-  (read (concat "("
-                (gnus-harvest-sqlite-invoke
-                 (format "
+  (let ((addrs
+         (read (concat "("
+                       (gnus-harvest-sqlite-invoke
+                        (format "
 SELECT
-    '\"' ||
+    '(\"' ||
     CASE
         WHEN fullname IS NOT NULL
         THEN fullname || ' <' || email || '>'
         ELSE email
     END
-    || '\"'
+    || '\" . ' ||
+    CASE
+        WHEN respond_email IS NOT NULL
+        THEN '\"' || respond_email || '\"'
+        ELSE 'nil'
+    END
+    || ')'
 FROM
     (
         SELECT
-            email, fullname, last_seen, weight
+            email, respond_email, fullname, last_seen, weight
         FROM
             addrs
         WHERE
@@ -135,10 +187,11 @@ FROM
         LIMIT
             %d
     )"
-                         (if prefix-only-p "" "%") stub
-                         (if prefix-only-p "" "%") stub
-                         gnus-harvest-query-limit))
-                ")")))
+                                (if prefix-only-p "" "%") stub
+                                (if prefix-only-p "" "%") stub
+                                gnus-harvest-query-limit))
+                       ")"))))
+    addrs))
 
 (defun gnus-harvest-mailalias-complete-stub (stub)
   (sendmail-sync-aliases)
@@ -149,11 +202,18 @@ FROM
 	    (build-mail-aliases))))
   (let ((entry (assoc stub mail-aliases)))
     (if entry
-        (cdr entry)
+        (let ((result (split-string (cdr entry) ", ")))
+          (if (= (length result) 1)
+              (car result)
+            (mapconcat #'identity
+                       (mapcar #'(lambda (entry)
+                                   (cdr (assoc entry mail-aliases)))
+                               result)
+                       ",\n    ")))
       (delete nil
-              (mapcar (lambda (entry)
-                        (if (string-prefix-p stub (car entry))
-                            (cdr entry)))
+              (mapcar #'(lambda (entry)
+                          (if (string-prefix-p stub (car entry))
+                              (cdr entry)))
                       mail-aliases)))))
 
 (defun gnus-harvest-bbdb-complete-stub (stub)
@@ -161,13 +221,15 @@ FROM
     (delete
      nil
      (mapcar
-      (lambda (record)
+      #'(lambda (record)
         (let* ((nets (funcall (if (functionp 'bbdb-record-net)
                                   'bbdb-record-net
                                 'bbdb-record-mail) record))
                (alias (if (functionp 'bbdb-record-raw-notes)
                           (cdr (assq 'mail-alias
-                                     (bbdb-record-raw-notes record) record))
+                                     (funcall (symbol-function
+                                               'bbdb-record-raw-notes)
+                                              record)))
                         (bbdb-record-note record 'mail-alias)))
                (addr (and nets
                           (format "%s <%s>" (bbdb-record-name record)
@@ -180,43 +242,69 @@ FROM
                             bbdb-mail-alias-field) stub)))
         (bbdb-search (bbdb-records) stub nil stub target))))))
 
-(defun gnus-harvest-insert-address (email fullname moment weight)
-  (insert "INSERT OR REPLACE INTO addrs (email, ")
-  (if fullname
-      (insert "fullname, "))
-  (insert "last_seen, weight) VALUES (lower('" email "'), '")
-  (if fullname
-      (insert fullname "', '"))
-  (insert moment "', '")
-  (insert (number-to-string weight) "');\n"))
+(defun gnus-harvest-insert-address (email respond-email fullname moment weight)
+  (insert
+   (format
+    "
+INSERT OR REPLACE INTO
+    addrs (email, respond_email, fullname, last_seen, weight)
+VALUES
+    (lower('%s'), %s, %s, '%s', '%s');
+"
+    email
+    (if respond-email
+        (format "'%s'" respond-email)
+      (format "(SELECT respond_email FROM addrs WHERE email='%s')" email))
+    (if fullname
+        (format "'%s'" fullname)
+      (format "(SELECT fullname FROM addrs WHERE email='%s')" email))
+    moment
+    (number-to-string weight))))
 
 ;;;###autoload
 (defun gnus-harvest-addresses ()
   "Harvest and remember the addresses in the current article buffer."
   (let ((tmp-buf (generate-new-buffer "*gnus harvest*"))
-        (moment (number-to-string (floor (float-time)))))
+        (moment (number-to-string (floor (float-time))))
+        (email-list
+         (mapcar #'(lambda (field)
+                     (let ((value (message-field-value field)))
+                       (and value
+                            (cons field
+                                  (mail-extract-address-components value t)))))
+                 '("to" "reply-to" "from" "resent-from" "cc" "bcc")))
+        respond-email)
+    (catch 'found
+      (mapc
+       #'(lambda (info)
+           (when info
+             (mapc
+              #'(lambda (addr)
+                  (dolist (sender-match gnus-harvest-sender-alist)
+                    (when (string= (cadr addr) (cdr sender-match))
+                      (setq respond-email (cadr addr))
+                      (throw 'found t))))
+              (cdr info))))
+       email-list))
     (mapc
-     (lambda (info)
-       (if info
+     #'(lambda (info)
+         (when info
            (let ((field (car info)))
              (mapc
-              (lambda (addr)
-                (if (and (cadr addr)
-                         (not (string-match gnus-harvest-ignore-email-regexp
-                                            (cadr addr))))
-                    (with-current-buffer tmp-buf
-                      (gnus-harvest-insert-address
-                       (cadr addr) (car addr) moment
-                       (if (string= "to" field)
-                           10
-                         1)))))
+              #'(lambda (addr)
+                  (if (and (cadr addr)
+                           (not (string-match gnus-harvest-ignore-email-regexp
+                                              (cadr addr)))
+                           (string-match "@" (cadr addr)))
+                      (with-current-buffer tmp-buf
+                        (unless (string= (cadr addr) respond-email)
+                          (gnus-harvest-insert-address
+                           (cadr addr) respond-email (car addr) moment
+                           (if (string= "to" field)
+                               10
+                             1))))))
               (cdr info)))))
-     (mapcar (lambda (field)
-               (let ((value (message-field-value field)))
-                 (and value
-                      (cons field
-                            (mail-extract-address-components value t)))))
-             '("to" "reply-to" "from" "resent-from" "cc" "bcc")))
+     email-list)
     (with-current-buffer tmp-buf
       (gnus-harvest-sqlite-invoke nil t)
       (kill-buffer (current-buffer)))))
@@ -231,27 +319,34 @@ FROM
             (prog1
                 (buffer-substring-no-properties (point) here)
               (delete-region (point) here))))
-         (aliases (if (featurep 'bbdb)
-                      (gnus-harvest-bbdb-complete-stub stub)
-                    (gnus-harvest-mailalias-complete-stub stub))))
-    (insert
-     (if (stringp aliases)
-         aliases
-       (setq aliases
-             (delete-dups
-              (append aliases
-                      (delete stub
-                              (gnus-harvest-complete-stub stub)))))
-       (cond
-        ((> (length aliases) 1)
-         (ido-completing-read "Use address: " aliases nil t stub))
-        ((= (length aliases) 1)
-         (car aliases))
-        (t
-         (insert stub)
-         (error "Could not find any matches for '%s'" stub)))))
+         (aliases (let ((bbdb (and gnus-harvest-search-in-bbdb
+                                   (gnus-harvest-bbdb-complete-stub stub)))
+                        (mailrc (gnus-harvest-mailalias-complete-stub stub)))
+                    (cond
+                     ((stringp bbdb) bbdb)
+                     ((stringp mailrc) mailrc)
+                     (t
+                      (nconc bbdb mailrc)))))
+         (addrs (gnus-harvest-complete-stub stub gnus-harvest-match-by-prefix))
+         (addr
+          (if (stringp aliases)
+              aliases
+            (setq aliases
+                  (delete-dups
+                   (append aliases
+                           (delete stub (mapcar #'car addrs)))))
+            (cond
+             ((> (length aliases) 1)
+              (ido-completing-read "Use address: " aliases nil t stub))
+             ((= (length aliases) 1)
+              (car aliases))
+             (t
+              (insert stub)
+              (error "Could not find any matches for '%s'" stub))))))
+    (insert addr)
     (if text-follows
         (insert ", "))
+    (gnus-harvest-set-from (cdr (assoc addr addrs)))
     (if (and gnus-harvest-move-to-subject-after-match
              (null (message-field-value "subject")))
         (message-goto-subject))))
@@ -262,6 +357,7 @@ FROM
     (gnus-harvest-create-db))
 
   (add-hook 'gnus-article-prepare-hook 'gnus-harvest-addresses)
+  (add-hook 'message-setup-hook 'gnus-harvest-set-from)
   (add-hook 'message-send-hook 'gnus-harvest-addresses)
 
   (dolist (feature features)
