@@ -315,7 +315,8 @@ VALUES
   (let* ((text-follows (not (looking-at "\\s-*$")))
          (stub
           (let ((here (point)))
-            (backward-word 1)
+            (re-search-backward "[:,]\\s-+")
+            (goto-char (match-end 0))
             (prog1
                 (buffer-substring-no-properties (point) here)
               (delete-region (point) here))))
