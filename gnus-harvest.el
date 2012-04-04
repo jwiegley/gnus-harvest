@@ -207,7 +207,8 @@ FROM
               (car result)
             (mapconcat #'identity
                        (mapcar #'(lambda (entry)
-                                   (cdr (assoc entry mail-aliases)))
+                                   (or (cdr (assoc entry mail-aliases))
+                                       entry))
                                result)
                        ",\n    ")))
       (delete nil
