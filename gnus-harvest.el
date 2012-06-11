@@ -103,18 +103,19 @@ to something else.
   :group 'gnus-harvest)
 
 (defun gnus-harvest-set-from (&optional address)
-  (when (or address gnus-harvest-sender-alist)
+  (unless (message-field-value "from")
     (let ((to (message-field-value "to")))
       (when to
-        (unless (message-field-value "from")
-          (message-add-header
-           (format "From: %s <%s>"
-                   user-full-name
-                   (or address
-                       (assoc-default
-                        (cadr (mail-extract-address-components to))
-                        gnus-harvest-sender-alist 'string-match
-                        user-mail-address)))))))))
+        (setq to (cadr (mail-extract-address-components to)))
+        (let* ((addrs (gnus-harvest-complete-stub to t))
+               (addr (or address
+                         (and addrs (cdar addrs))
+                         (assoc-default to gnus-harvest-sender-alist
+                                        'string-match
+                                        user-mail-address))))
+          (if addr
+              (message-add-header
+               (format "From: %s <%s>" user-full-name addr))))))))
 
 (defun gnus-harvest-sqlite-invoke (sql &optional ignore-output-p)
   (let ((tmp-buf (and (not ignore-output-p)
@@ -197,9 +198,9 @@ FROM
   (sendmail-sync-aliases)
   (if (eq mail-aliases t)
       (progn
-	(setq mail-aliases nil)
-	(if (file-exists-p mail-personal-alias-file)
-	    (build-mail-aliases))))
+        (setq mail-aliases nil)
+        (if (file-exists-p mail-personal-alias-file)
+            (build-mail-aliases))))
   (let ((entry (assoc stub mail-aliases)))
     (if entry
         (let ((result (split-string (cdr entry) ", ")))
