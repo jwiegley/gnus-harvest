@@ -50,6 +50,9 @@
 (require 'bbdb nil t)
 (require 'bbdb-com nil t)
 
+(eval-when-compile
+  (require 'cl))
+
 (defgroup gnus-harvest nil
   "Harvest addresses from Gnus articles and messages"
   :group 'gnus)
@@ -80,7 +83,9 @@
   :group 'gnus-harvest)
 
 (defcustom gnus-harvest-search-in-bbdb (featurep 'bbdb)
-  "If non-nil, look for mail-alias notes in the user's BBDB records."
+  "If non-nil, look for net addresses in the user's BBDB records.
+If you want to complete based on the `mail-alias' field, see the
+function `bbdb-mail-aliases'."
   :type 'boolean
   :group 'gnus-harvest)
 
@@ -219,30 +224,10 @@ FROM
                       mail-aliases)))))
 
 (defun gnus-harvest-bbdb-complete-stub (stub)
-  (catch 'found
-    (delete
-     nil
-     (mapcar
-      #'(lambda (record)
-        (let* ((nets (funcall (if (functionp 'bbdb-record-net)
-                                  'bbdb-record-net
-                                'bbdb-record-mail) record))
-               (alias (if (functionp 'bbdb-record-raw-notes)
-                          (cdr (assq 'mail-alias
-                                     (funcall (symbol-function
-                                               'bbdb-record-raw-notes)
-                                              record)))
-                        (bbdb-record-note record 'mail-alias)))
-               (addr (and nets
-                          (format "%s <%s>" (bbdb-record-name record)
-                                  (car nets)))))
-          (if (and addr alias (string= stub alias))
-              (throw 'found addr)
-            addr)))
-      (let ((target (cons (if (boundp 'bbdb-define-all-aliases-field)
-                              bbdb-define-all-aliases-field
-                            bbdb-mail-alias-field) stub)))
-        (bbdb-search (bbdb-records) stub nil stub target))))))
+  (loop for record in (bbdb-search (bbdb-records) stub nil stub)
+        for nets = (bbdb-record-mail record)
+        when nets
+        collect (format "%s <%s>" (bbdb-record-name record) (car nets))))
 
 (defun gnus-harvest-insert-address (email respond-email fullname moment weight)
   (insert
@@ -330,11 +315,13 @@ VALUES
                      ((stringp mailrc) mailrc)
                      (t
                       (nconc bbdb mailrc)))))
-         (addrs (gnus-harvest-complete-stub stub gnus-harvest-match-by-prefix))
+         addrs
          (addr
           (if (stringp aliases)
               aliases
-            (setq aliases
+            (setq addrs (gnus-harvest-complete-stub
+                         stub gnus-harvest-match-by-prefix)
+                  aliases
                   (delete-dups
                    (append aliases
                            (delete stub (mapcar #'car addrs)))))
@@ -349,7 +336,7 @@ VALUES
     (insert addr)
     (if text-follows
         (insert ", "))
-    (gnus-harvest-set-from (cdr (assoc addr addrs)))
+    (gnus-harvest-set-from (and addrs (cdr (assoc addr addrs))))
     (if (and gnus-harvest-move-to-subject-after-match
              (null (message-field-value "subject")))
         (message-goto-subject))))
