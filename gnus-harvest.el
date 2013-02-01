@@ -273,6 +273,8 @@ VALUES
                       (throw 'found t))))
               (cdr info))))
        email-list))
+    (with-current-buffer tmp-buf
+      (insert "BEGIN;"))
     (mapc
      #'(lambda (info)
          (when info
@@ -293,6 +295,7 @@ VALUES
               (cdr info)))))
      email-list)
     (with-current-buffer tmp-buf
+      (insert "COMMIT;")
       (gnus-harvest-sqlite-invoke nil t)
       (kill-buffer (current-buffer)))))
 
