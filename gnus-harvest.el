@@ -107,6 +107,12 @@ to something else.
   :type '(alist :key-type regexp :value_type string)
   :group 'gnus-harvest)
 
+(defcustom gnus-harvest-address-function nil
+  "A function applied to the address string just before insertion.
+
+For example, if you only want to insert the email address of
+contacts set this variable to mail-strip-quoted-names.")
+
 (defun gnus-harvest-set-from (&optional address)
   (unless (message-field-value "from")
     (let ((to (message-field-value "to")))
@@ -336,7 +342,8 @@ VALUES
              (t
               (insert stub)
               (error "Could not find any matches for '%s'" stub))))))
-    (insert addr)
+    (insert (if gnus-harvest-address-function
+                (funcall gnus-harvest-address-function addr) addr))
     (if text-follows
         (insert ", "))
     (gnus-harvest-set-from (and addrs (cdr (assoc addr addrs))))
