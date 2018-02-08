@@ -1,4 +1,4 @@
-;;; gnus-harvest --- Harvest e-mail address from read/written articles
+;;; gnus-harvest.el --- Harvest e-mail address from read/written articles
 
 ;; Copyright (C) 2011 John Wiegley
 
